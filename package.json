@@ -1,0 +1,11 @@
+{
+  "name": "AirHockey",
+  "main": "app.html",
+  "window": {
+    "frame": true,
+    "transparent": false,
+    "width":640,
+    "height":640,
+    "resizable":false
+  }
+}

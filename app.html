@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html><meta charset="UTF-8">
+<head>
+  <title>AirHockey</title>
+  <style>
+  body{
+    margin:0 0;
+  }
+  </style>
+  <script src="js/jquery-1.12.3.min.js"></script>
+  <script src="js/tracking.js"></script>
+</head>
+<body style="width: 100%; height: 100%;">
+<div style="margin:0 auto;width:640px;">
+    <div style="margin:-480px auto 0 auto;width:640px;height:480px;z-index:2;">
+        <video id="video" width="640px" height="480px" autoplay style="margin:0px auto;width:640px;height:480px;"></video>
+    </div>
+    <canvas id="drawing" width="640px" height="480px" style="z-index:1;margin:0 0;width:640px;height:480px;"></canvas>
+    <p><button id="snap">开始</button></p>
+    <div id="result"></div>
+</div>
+<script>
+var w = 640;
+var h = 480;
+var canvas;
+var context; 
+window.addEventListener("DOMContentLoaded", function() {
+	canvas = document.getElementById("drawing");
+	context = canvas.getContext("2d");
+	var video = document.getElementById("video");
+	var videoObj = { "video": true };
+	var errBack = function(error) {
+		console.log("Video capture error: ", error.code); 
+	};
+    tracking.ColorTracker.registerColor('ball', function(r, g, b) {
+
+      if (r > 150 && b < 40 && g < 40) {
+        return true;
+      }
+      return false;
+    });
+    var colors = new tracking.ColorTracker('ball');
+    var positions =[];
+    colors.on('track', function(event) {
+	context.drawImage(video, 0, 0, w, h);
+    if (event.data.length === 0) {
+      // No colors were detected in this frame.
+    } else {
+      event.data.forEach(function(rect) {
+        context.beginPath();
+        context.lineWidth = 1;
+        context.moveTo(rect.x+rect.width/2, rect.y);
+        context.lineTo(rect.x+rect.width/2, rect.y+rect.height);
+        context.moveTo(rect.x, rect.y+rect.height/2);
+        context.lineTo(rect.x+rect.width, rect.y+rect.height/2);
+        context.strokeStyle = '#00ff00';
+        context.stroke();
+        positions.push([new Date().getTime(),rect.x+rect.width/2,rect.y+rect.height/2]);
+        if(positions.length>5){
+            positions.shift();
+        }
+        var info = positions[positions.length-1];
+        if(positions.length>4){
+            var prev_info = positions[positions.length-4];
+            var dx = info[1]-prev_info[1];
+            var dy = info[2]-prev_info[2];
+            if(dx>1||dy>1||dx<-1||dy<-1){
+                var angle = Math.atan2(dy,dx);
+                var dt = (info[0]-prev_info[0])/2;
+                var tx = info[1]+dt*Math.cos(angle);
+                var ty = info[2]+dt*Math.sin(angle);
+                context.beginPath();
+                context.lineWidth = 1;
+                context.moveTo(info[1],info[2]);
+                context.lineTo(tx,ty);
+                context.strokeStyle = '#0000ff';
+                context.stroke();
+                if(angle>30&&angle<150){
+                    
+                }
+                $("#result").html("x:"+dx+" y:"+dy+" time:"+info[0]+" angle:"+(Math.floor(angle*180/3.1415926*100)/100));
+            }
+        }
+      });
+    }
+  });
+  tracking.track('#video', colors, { camera: true });
+}, false);
+function onStart(){
+}
+</script>
+</body>
+</html>
