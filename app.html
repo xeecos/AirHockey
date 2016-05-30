@@ -16,10 +16,60 @@
         <video id="video" width="640px" height="480px" autoplay style="margin:0px auto;width:640px;height:480px;"></video>
     </div>
     <canvas id="drawing" width="640px" height="480px" style="z-index:1;margin:0 0;width:640px;height:480px;"></canvas>
-    <p><button id="snap">开始</button></p>
+    <p><label for="serialport" style="display:inline-block">Serial Port:</label>
+      <select id="serialport" style="width:100px"></select> <button id="connect" onClick="onConnect();">Connect</button>   <label style="display:inline-block">GCode:</label>
+      <input id="inputgcode" style="width:200px" type="input"></input> <button id="sendgcode" onClick="onSend();">Send</button></p>
     <div id="result"></div>
 </div>
 <script>
+var connId = -1;
+chrome.serial.getDevices(function(ports){
+    $("#serialport").empty();
+    for(var port in ports){
+        var op = $('<option></option>').attr('value',ports[port].path).text(ports[port].path);
+        $("#serialport").append(op);
+    }
+});
+chrome.serial.onReceive.addListener(function (buffer){
+    var bufView = new Uint8Array(buffer.data);
+    var str = "";
+    for (var i=0; i<bufView.length; i++) {
+        str+=String.fromCharCode(bufView[i]);
+    }
+    console.log(str);
+});
+function onConnect(){
+    if(connId==-1){
+        var path = $("#serialport").val();
+        chrome.serial.connect(path, {bitrate:115200}, function (connection){
+            connId = connection.connectionId;
+            $("#connect").text("Disconnect");
+        });
+    }else{
+        chrome.serial.disconnect(connId,function(result){
+            connId = -1;
+            $("#connect").text("Connect");
+        });
+    }
+}
+function onSend(){
+    sendGCode($("#inputgcode").val());
+}
+function str2buffer(str) {
+  var buf = new ArrayBuffer(str.length); // 2 bytes for each char
+  var bufView = new Uint8Array(buf);
+  for (var i=0, strLen=str.length; i<strLen; i++) {
+    bufView[i] = str.charCodeAt(i);
+  }
+  return buf;
+}
+function sendGCode(code){
+    if(connId!=-1){
+        chrome.serial.send(connId, str2buffer(code+"\n"), function (sendInfo){
+            if(sendInfo.error)console.log(sendInfo.error);
+        });
+    }
+}
 var w = 640;
 var h = 480;
 var canvas;
@@ -32,62 +82,66 @@ window.addEventListener("DOMContentLoaded", function() {
 	var errBack = function(error) {
 		console.log("Video capture error: ", error.code); 
 	};
-    tracking.ColorTracker.registerColor('ball', function(r, g, b) {
-
-      if (r > 150 && b < 40 && g < 40) {
-        return true;
-      }
-      return false;
-    });
-    var colors = new tracking.ColorTracker('ball');
-    var positions =[];
-    colors.on('track', function(event) {
-	context.drawImage(video, 0, 0, w, h);
-    if (event.data.length === 0) {
-      // No colors were detected in this frame.
-    } else {
-      event.data.forEach(function(rect) {
-        context.beginPath();
-        context.lineWidth = 1;
-        context.moveTo(rect.x+rect.width/2, rect.y);
-        context.lineTo(rect.x+rect.width/2, rect.y+rect.height);
-        context.moveTo(rect.x, rect.y+rect.height/2);
-        context.lineTo(rect.x+rect.width, rect.y+rect.height/2);
-        context.strokeStyle = '#00ff00';
-        context.stroke();
-        positions.push([new Date().getTime(),rect.x+rect.width/2,rect.y+rect.height/2]);
-        if(positions.length>5){
-            positions.shift();
+    tracking.ColorTracker.registerColor('color', function(r, g, b) {
+        if (r > 130 && b < 40 && g < 40) {
+            return true;
         }
-        var info = positions[positions.length-1];
-        if(positions.length>4){
-            var prev_info = positions[positions.length-4];
-            var dx = info[1]-prev_info[1];
-            var dy = info[2]-prev_info[2];
-            if(dx>1||dy>1||dx<-1||dy<-1){
-                var angle = Math.atan2(dy,dx);
-                var dt = (info[0]-prev_info[0])/2;
-                var tx = info[1]+dt*Math.cos(angle);
-                var ty = info[2]+dt*Math.sin(angle);
+        if (r > 130 && b < 60 && g > 100) {
+            return true;
+        }
+        return false;
+    });
+    
+    var tracker = new tracking.ColorTracker('color');
+    
+    var positions =[[],[],[],[],[],[]];
+    tracker.on('track', function(event) {
+        context.drawImage(video, 0, 0, w, h);
+        if (event.data.length === 0) {
+          // No colors were detected in this frame.
+        } else {
+            var index = 0;
+            event.data.forEach(function(rect) {
                 context.beginPath();
                 context.lineWidth = 1;
-                context.moveTo(info[1],info[2]);
-                context.lineTo(tx,ty);
-                context.strokeStyle = '#0000ff';
+                context.moveTo(rect.x+rect.width/2, rect.y);
+                context.lineTo(rect.x+rect.width/2, rect.y+rect.height);
+                context.moveTo(rect.x, rect.y+rect.height/2);
+                context.lineTo(rect.x+rect.width, rect.y+rect.height/2);
+                context.strokeStyle = '#00ff00';
                 context.stroke();
-                if(angle>30&&angle<150){
-                    
+                positions[index].push([new Date().getTime(),rect.x+rect.width/2,rect.y+rect.height/2]);
+                if(positions[index].length>5){
+                    positions[index].shift();
                 }
-                $("#result").html("x:"+dx+" y:"+dy+" time:"+info[0]+" angle:"+(Math.floor(angle*180/3.1415926*100)/100));
-            }
+                var info = positions[index][positions[index].length-1];
+                if(positions[index].length>4){
+                    var prev_info = positions[index][positions[index].length-4];
+                    var dx = info[1]-prev_info[1];
+                    var dy = info[2]-prev_info[2];
+                    if(dx>1||dy>1||dx<-1||dy<-1){
+                        var angle = Math.atan2(dy,dx);
+                        var dt = (info[0]-prev_info[0])/2;
+                        var tx = info[1]+dt*Math.cos(angle);
+                        var ty = info[2]+dt*Math.sin(angle);
+                        context.beginPath();
+                        context.lineWidth = 1;
+                        context.moveTo(info[1],info[2]);
+                        context.lineTo(tx,ty);
+                        context.strokeStyle = '#0000ff';
+                        context.stroke();
+                        if(angle>30&&angle<150){
+                            
+                        }
+                        $("#result").html("x:"+dx+" y:"+dy+" time:"+info[0]+" angle:"+(Math.floor(angle*180/3.1415926*100)/100));
+                    }
+                }
+                index++;
+            });
         }
-      });
-    }
-  });
-  tracking.track('#video', colors, { camera: true });
+    });
+  tracking.track('#video', tracker, { camera: true });
 }, false);
-function onStart(){
-}
 </script>
 </body>
 </html>
